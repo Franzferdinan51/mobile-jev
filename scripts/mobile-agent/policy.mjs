@@ -151,16 +151,36 @@ export function buildQuestions(observation, texts = [], apps = []) {
   return { elements, questions, tap, scroll, text, controls, app };
 }
 
+const HOSTED_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
+
+// A local SystemOne shim (python -m systemone.shim) speaks the same
+// /v1/systemone dialect over plain-HTTP loopback and needs no API key.
+// The transport still requires a non-empty bearer token, so 'local' is used.
+const isLocalEndpoint = (url) => {
+  try {
+    const target = new URL(url);
+    return (
+      target.protocol === 'http:' &&
+      (target.hostname === '127.0.0.1' || target.hostname === 'localhost')
+    );
+  } catch {
+    return false;
+  }
+};
+
 export class TypeSafePolicy {
   constructor({
     apiKey = process.env.TYPESAFE_API_KEY,
+    endpoint = process.env.SYSTEMONE_ENDPOINT || HOSTED_ENDPOINT,
     model = process.env.TYPESAFE_MODEL || 'jev-latest',
     threshold = 0,
     request = pooledRequest,
   } = {}) {
     if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
       throw new Error('Confidence threshold must be between 0 and 1.');
+    if (!apiKey && isLocalEndpoint(endpoint)) apiKey = 'local';
     this.apiKey = apiKey;
+    this.endpoint = endpoint;
     this.model = model;
     this.threshold = threshold;
     this.request = request;
@@ -221,7 +241,7 @@ export class TypeSafePolicy {
     const started = performance.now();
     const response = decodeJson(
       await this.request({
-        url: 'https://api.typesafe.ai/v1/systemone',
+        url: this.endpoint,
         apiKey: this.apiKey,
         method: 'POST',
         body,
